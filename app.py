@@ -13,38 +13,43 @@ logging.basicConfig(level=logging.DEBUG)
 # Create the app
 app = Flask(__name__)
 
-# Directly set the session secret and database URL here
-app.secret_key = "mysecretkey"  # Replace this with your actual secret key
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # needed for url_for to generate with https
+# Session secret key — replace with a secure one in production!
+app.secret_key = "mysecretkey"
 
-# Configure the database with the external database URL
+# Fix for HTTPS and reverse proxy (needed for url_for and secure cookies)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Database config (from Render PostgreSQL)
 app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://text_analyzer_user:hGsHSsQMykZYHUsXsnNsF3sfzqi8ZFwq@dpg-d0fkg42dbo4c73aidhn0-a.oregon-postgres.render.com/text_analyzer"
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "pool_pre_ping": True,
 }
 
-# Initialize db with the app
+# Initialize extensions
 db.init_app(app)
-
-# Initialize Flask-Migrate
 migrate = Migrate(app, db)
 
-# Configure Flask-Login
+# Flask-Login setup
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
-# Import models inside the user_loader function to avoid circular import
+# User loader for Flask-Login
 @login_manager.user_loader
 def load_user(user_id):
-    from models import User  # Lazy import to prevent circular import
+    from models import User  # Lazy import to avoid circular dependencies
     return User.query.get(int(user_id))
 
+# Create tables if not exist
 with app.app_context():
     db.create_all()
 
+# Import routes (should be at the end to avoid circular imports)
 from routes import *  # noqa: E402, F403
+
+# Entry point
 if __name__ == "__main__":
-    app.run(debug=False)
+    port = int(os.environ.get("PORT", 5000))  # Render sets PORT in env
+    app.run(host="0.0.0.0", port=port, debug=False)
